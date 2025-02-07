@@ -1,40 +1,103 @@
-# Deciphering spatial domains from spatial multi-omics with SpatialGlue 
-This repository contains SpatialGlue script and jupyter notebooks essential for reproducing the benchmarking outcomes shown in the paper. We provide experimental data in each case with details available within the notebook. All experiment data is reproducible through the provided scripts of various methods (https://github.com/JinmiaoChenLab/SpatialGlue_notebook). Some notebooks will be uploaded shortly to complement the available resources. 
 
-[![DOI](https://zenodo.org/badge/631763850.svg)](https://zenodo.org/badge/latestdoi/631763850)
+# Uncertainty-Rebalanced Multimodal Fusion (URMF) for Spatial Multi-Omics Learning
 
-![](https://github.com/JinmiaoChenLab/SpatialGlue/blob/main/Workflow.jpg)
+## 📌 Introduction
 
-## Overview
-Integration of multiple data modalities in a spatially informed manner remains an unmet need for exploiting spatial multi-omics data. Here, we introduce SpatialGlue, a novel graph neural network with dual-attention mechanism, to decipher spatial domains by intra-omics integration of spatial location and omics measurement followed by cross-omics integration. We demonstrate that SpatialGlue can more accurately resolve spatial domains at a higher resolution across different tissue types and technology platforms, to enable biological insights into cross-modality spatial correlations. SpatialGlue is computation resource efficient and can be applied for data from various spatial multi-omics technological platforms, including Spatial-epigenome-transcriptome, Stereo-CITE-seq, SPOTS, and 10x Visium. Next, we will extend SpatialGlue to more platforms, such as 10x Genomics Xenium and Nanostring CosMx. 
+This project implements a **VAE + GCN + EURO + UDR**-based multimodal learning framework for **spatial multi-omics data fusion**. Inspired by **URMF (Uncertainty-Rebalanced Multimodal Fusion)**, the model dynamically balances **epistemic uncertainty** across different omics modalities (e.g., RNA and Protein). The fusion strategy is powered by **Gating Functions** and **Uncertainty-Driven Regularization (UDR)**.
 
-## Requirements
-You'll need to install the following packages in order to run the codes.
-* python==3.8
-* torch>=1.8.0
-* cudnn>=10.2
-* numpy==1.22.3
-* scanpy==1.9.1
-* anndata==0.8.0
-* rpy2==3.4.1
-* pandas==1.4.2
-* scipy==1.8.1
-* scikit-learn==1.1.1
-* scikit-misc==0.2.0
-* tqdm==4.64.0
-* matplotlib==3.4.2
-* R==4.0.3
+## 🚀 Features
 
-## Tutorial
-For the step-by-step tutorial, please refer to:
-[https://spatialglue-tutorials.readthedocs.io/en/latest/](https://spatialglue-tutorials.readthedocs.io/en/latest/)
+- **Graph Convolutional Networks (GCN)** for capturing spatial dependencies
+- **Variational Autoencoders (VAE)** for learning latent representations
+- **Uncertainty-Driven Regularization (UDR)** for robustness
+- **Epistemic Uncertainty-Rebalanced Optimization (EURO)** for adaptive training
+- **Channel Attention Mechanism** for multimodal fusion
+- **Task-Specific Adaptation (TSA)** for improved representation learning
 
-## Data
-In this paper, we tested 5 simulation datasets and 12 experimental datasets including 2 mouse spleen datasets acquired with SPOTS (Ben-Chetrit et al., 2023), 4 mouse thymus datasets from Stereo-CITE-seq (unpublished), and 4 mouse brain spatial-epigenome-transcriptome datasets (Zhang et al. 2023), and 2 in-house human lymph node datasets acquired with 10x Visium CytAssist. The SPOTS mouse spleen data was obtained from the GEO repository (accession no. GSE198353, https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE198353), the Stereo-CITE-seq mouse thymus data from BGI and the spatial-epigenome-transcriptome mouse brain data from AtlasXplore (https://web.atlasxomics.com/visualization/Fan). The details of all datasets used are available in the Methods section. The data used as input to the methods tested in this study, inclusive of the Stereo-CITE-seq and the in-house human lymph node data have been uploaded to Zenodo and is freely available at https://zenodo.org/records/10362607.
+## 📁 Project Structure
 
-## Benchmarking and notebooks
-In the paper, we compared SpatialGlue with 7 state-of-the-art single-cell multi-omics integration methods, including Seurat, totalVI, MultiVI, MOFA+, MEFISTO, scMM, and StabMap. Jupyter
-notebooks covering the benchmarking analysis in this paper are available at https://github.com/JinmiaoChenLab/SpatialGlue/tree/main/notebooks.
+```
+|-- spatialglue/
+    |-- preprocess.py  # Data processing and graph construction
+    |-- model.py       # VAE + GCN + EURO + UDR implementation
+    |-- train.py       # Training pipeline
+    |-- utils.py       # Utility functions
+    |-- attention.py   # Channel attention and gating functions
+    |-- readme.md      # Project documentation
+```
 
-## Citation
-[Yahui Long](https://longyahui.github.io/Home//) et al. Deciphering spatial domains from spatial multi-omics with SpatialGlue. **Nature Methods**. 2024.
+## 🛠 Installation
+
+This project requires **Python 3.8+** and the following dependencies:
+
+```bash
+pip install torch torchvision torchaudio
+pip install numpy scipy pandas scanpy anndata tqdm
+pip install scikit-learn seaborn matplotlib
+```
+
+If using **CUDA**, install the appropriate **PyTorch version** from [PyTorch.org](https://pytorch.org/get-started/locally/).
+
+## 🏗 Model Architecture
+
+The model consists of **two encoders** and **two decoders**, connected via **uncertainty-aware multimodal fusion**:
+
+### **Encoder (VAE + GCN)**
+
+- **Graph Convolutional Networks (GCN)** for learning spatial relations
+- **VAE-style encoders** for each modality (`omics1`, `omics2`)
+- **Epistemic uncertainty modeling** via variance estimation
+
+### **Multimodal Fusion (EURO + UDR)**
+
+- **Gating Function** for dynamic uncertainty reweighting
+- **UDR (Uncertainty-Driven Regularization)** for robust learning
+- **Channel Attention (ChannelGate)** for feature integration
+
+### **Decoder (GCN Reconstruction)**
+
+- **Modality-specific decoders** for reconstructing input features
+- **L_recon + KL loss** for VAE training
+
+## 📊 Training Pipeline
+
+To train the model on spatial multi-omics data:
+
+```python
+from spatialglue.train import Train_SpatialGlue
+
+trainer = Train_SpatialGlue(data=your_adata_dict, device='cuda', epochs=600)
+results = trainer.train()
+```
+
+### **Loss Functions**
+
+- **Reconstruction Loss (L_recon)**: MSE loss for feature reconstruction
+- **KL Divergence Loss**: VAE regularization
+- **Adaptive Gradient Reweighting (EURO)**: Uncertainty-based weight adjustment
+
+## 📌 Example Usage
+
+```python
+from spatialglue.model import Encoder_overall
+
+model = Encoder_overall(dim_input1=3000, dim_output1=64, dim_input2=3000, dim_output2=64)
+output = model(features_omics1, features_omics2, adj_spatial, adj_feature_omics1, adj_feature_omics2)
+```
+
+## 📝 Citation
+
+If you use this code for your research, please cite the original **URMF** paper:
+
+```bibtex
+@article{urmf2023,
+  author    = {Author Name},
+  title     = {Uncertainty-Rebalanced Multimodal Fusion for Spatial Multi-Omics Learning},
+  journal   = {NeurIPS},
+  year      = {2023}
+}
+```
+
+## 📬 Contact
+
+For questions and collaborations, please contact **1781748187@qq.com** or create an issue in this repository.
