@@ -18,28 +18,29 @@ class EncoderVAE(Module):
         logvar = self.fc_logvar(x)
         return mu, logvar
 
+# ========== Overall Encoder ==========
 class Encoder_overall(Module):
     def __init__(self, dim_in_omics1, dim_out_omics1, dim_in_omics2, dim_out_omics2, dropout=0.0, act=F.relu):
         super(Encoder_overall, self).__init__()
         
-        # Omics-specific encoders
+        # Omics-specific encoders (Standard GCN encoder)
         self.encoder_omics1 = Encoder(dim_in_omics1, dim_out_omics1)
         self.encoder_omics2 = Encoder(dim_in_omics2, dim_out_omics2)
 
-        # VAE encoders
+        # VAE encoders for each modality
         self.vae_encoder_omics1 = EncoderVAE(dim_out_omics1, dim_out_omics1)
         self.vae_encoder_omics2 = EncoderVAE(dim_out_omics2, dim_out_omics2)
 
-        # Decoders
+        # Decoders (Standard GCN decoder)
         self.decoder_omics1 = Decoder(dim_out_omics1, dim_in_omics1)
         self.decoder_omics2 = Decoder(dim_out_omics2, dim_in_omics2)
         
-        # 修改：融合模块——输入通道为2（两个模态拼接），输出128维
+        # 融合模块：输入通道为2（两个模态拼接），输出 128 维
         self.fusion = ChannelGate(2, 128, pool_types='avg')
+        # 后续全连接层，均使用 128 维
         self.mu = nn.Linear(128, 128)
         self.logvar = nn.Linear(128, 128)
         self.IB_classfier = nn.Linear(128, 3)
-        # 修改：fc_fusion1输出设为128（与融合模块输出一致）
         self.fc_fusion1 = nn.Sequential(nn.Linear(128, 128))
 
     def forward(self, features_omics1, features_omics2, adj_spatial, adj_feature_omics1, adj_feature_omics2):
@@ -47,7 +48,7 @@ class Encoder_overall(Module):
         emb_latent_spatial_omics1 = self.encoder_omics1(features_omics1, adj_spatial)  # Hs1
         emb_latent_spatial_omics2 = self.encoder_omics2(features_omics2, adj_spatial)  # Hs2
 
-        # VAE encoding
+        # VAE encoding for each modality
         mu_omics1, logvar_omics1 = self.vae_encoder_omics1(emb_latent_spatial_omics1)
         mu_omics2, logvar_omics2 = self.vae_encoder_omics2(emb_latent_spatial_omics2)
         var_omics1 = torch.exp(logvar_omics1)
@@ -60,7 +61,7 @@ class Encoder_overall(Module):
                 return mu_omics2
             else:
                 raise KeyError
-            
+        
         # UDR、GatingFunction、Sum 的实现
         l_sample, v_sample = cog_uncertainty_sample(mu_omics1, var_omics1, mu_omics2, var_omics2, sample_times=10)  
         sample_dict = {"l": l_sample, "v": v_sample}
@@ -70,8 +71,8 @@ class Encoder_overall(Module):
                 bsz, sample_times, dim = sample_tensor.shape
                 sample_tensor = sample_tensor.reshape(bsz * sample_times, dim)
                 sample_tensor = sample_tensor.unsqueeze(1)  # [bsz*sample_times, 1, dim]
-                supp_mod = get_supp_mod(key)              # [bsz, dim]
-                supp_mod = supp_mod.unsqueeze(1)          # [bsz, 1, dim]
+                supp_mod = get_supp_mod(key)               # [bsz, dim]
+                supp_mod = supp_mod.unsqueeze(1)           # [bsz, 1, dim]
                 supp_mod = supp_mod.unsqueeze(1).repeat(1, sample_times, 1, 1)
                 supp_mod = supp_mod.reshape(bsz * sample_times, 1, dim)  
                 feature = torch.cat([supp_mod, sample_tensor], dim=1)  # [bsz*sample_times, 2, dim]
@@ -93,15 +94,16 @@ class Encoder_overall(Module):
         w_omics2 = weight[1]
         emb_omics1 = mu_omics1 * w_omics1
         emb_omics2 = mu_omics2 * w_omics2
-        emb = torch.stack((emb_omics1, emb_omics2), dim=1)  # [batch, 2, latent_dim]
-
-        # 【修改】最终融合：使用拼接后的 emb 进行融合
+        # 拼接两个模态的特征，形状 [batch, 2, latent_dim]；此处 latent_dim 期望为 128
+        emb = torch.stack((emb_omics1, emb_omics2), dim=1)
+        
+        # 最终融合：使用拼接后的 emb 进行融合
         emb_fusion = self.fusion(emb)  # 输出: [batch, 128]
         mu_out = self.mu(emb_fusion)   # [batch, 128]
         logvar_out = self.logvar(emb_fusion)  # [batch, 128]
         z_out = reparameterize(mu_out, torch.exp(logvar_out))
         z_out = self.IB_classfier(z_out)  # [batch, 3]（用于后续分类）
-        omics1_omics2_out = self.fc_fusion1(mu_out)  # [batch, 128]
+        omics1_omics2_out = self.fc_fusion1(mu_out)  # 输出: [batch, 128]
 
         # Reconstruction via decoders
         emb_recon_omics1 = self.decoder_omics1(omics1_omics2_out, adj_spatial)
@@ -166,6 +168,6 @@ class AttentionLayer(Module):
         emb = torch.cat([torch.unsqueeze(emb1, dim=1), torch.unsqueeze(emb2, dim=1)], dim=1)
         v = F.tanh(torch.matmul(emb, self.w_omega))
         vu = torch.matmul(v, self.u_omega)
-        alpha = F.softmax(vu.squeeze() + 1e-6)  
+        alpha = F.softmax(vu.squeeze() + 1e-6)
         emb_combined = torch.matmul(torch.transpose(emb,1,2), torch.unsqueeze(alpha, -1))
-        return emb_combined.squeeze(), alpha  
+        return emb_combined.squeeze(), alpha
