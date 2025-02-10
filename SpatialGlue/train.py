@@ -1,7 +1,7 @@
 import torch
 from tqdm import tqdm
 import torch.nn.functional as F
-from .model import Encoder_overall
+from .model import Encoder_overall 
 from .preprocess import adjacent_matrix_preprocessing
 
 class Train_SpatialGlue:
@@ -14,7 +14,7 @@ class Train_SpatialGlue:
         weight_decay=0.00,
         epochs=600, 
         dim_input=3000,
-        dim_output=64,
+        dim_output=128,
         weight_factors=[1, 5, 1, 1, 1]  # 添加 KL 散度的权重因子
     ):
         """
@@ -128,9 +128,6 @@ class Train_SpatialGlue:
             'z_omics1': emb_omics1.detach().cpu().numpy(),
             'z_omics2': emb_omics2.detach().cpu().numpy(),
             'SpatialGlue': emb_combined.detach().cpu().numpy(),
-            'alpha_omics1': results['alpha_omics1'].detach().cpu().numpy(),
-            'alpha_omics2': results['alpha_omics2'].detach().cpu().numpy(),
-            'alpha': results['alpha'].detach().cpu().numpy()
         }
         
         return output
@@ -142,10 +139,10 @@ class Train_SpatialGlue:
         coeff_rna = torch.clamp(1 + 0.1 * cog_uncertainty_dict['protein'], min=0.8, max=1.2)
         coeff_protein = torch.clamp(1 + 0.1 * cog_uncertainty_dict['rna'], min=0.8, max=1.2)
 
-        for name, params in self.model.named_parameters():
-            if 'encoder_omics1' in name:
-                params.grad *= coeff_rna
-            if 'encoder_omics2' in name:
-                params.grad *= coeff_protein
-        
+        for name, param in self.model.named_parameters():
+            if param.grad is not None:
+                if 'encoder_omics1' in name:
+                    param.grad.mul_(coeff_rna)
+                if 'encoder_omics2' in name:
+                    param.grad.mul_(coeff_protein)
         return loss
