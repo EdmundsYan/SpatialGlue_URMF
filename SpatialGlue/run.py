@@ -18,8 +18,8 @@ results_dir = os.path.join(base_path, "results")
 os.makedirs(results_dir, exist_ok=True)
 
 # 定义数据文件路径
-adata_path_omics1 = os.path.join(base_path, "data", "Dataset1_Mouse_Spleen1", "adata_ADT.h5ad")
-adata_path_omics2 = os.path.join(base_path, "data", "Dataset1_Mouse_Spleen1", "adata_RNA.h5ad")
+adata_path_omics1 = os.path.join(base_path, "data", "Dataset2_Mouse_Spleen2", "adata_ADT.h5ad")
+adata_path_omics2 = os.path.join(base_path, "data", "Dataset2_Mouse_Spleen2", "adata_RNA.h5ad")
 
 # 读取数据
 print("Loading omics1 data from:", adata_path_omics1)

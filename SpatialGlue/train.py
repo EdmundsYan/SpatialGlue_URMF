@@ -1,4 +1,5 @@
 import torch
+import torch.nn as nn
 from tqdm import tqdm
 import torch.nn.functional as F
 from .model import Encoder_overall 
@@ -14,7 +15,7 @@ class Train_SpatialGlue:
         weight_decay=0.00,
         epochs=600, 
         dim_input=3000,
-        dim_output=128,
+        dim_output=64,
         weight_factors=[1, 5, 1, 1, 1]  # 添加 KL 散度的权重因子
     ):
         """
@@ -54,21 +55,24 @@ class Train_SpatialGlue:
 
         # 适配不同数据类型
         if self.datatype == 'SPOTS':
-            self.epochs = 600 
+            self.epochs = 700 
             self.weight_factors = [1, 5, 1, 1, 0.1]  # KL 权重因子
         elif self.datatype == 'Stereo-CITE-seq':
             self.epochs = 1500 
-            self.weight_factors = [1, 10, 1, 10, 0.05]
+            self.weight_factors = [1, 10, 1, 10, 0.01]
         elif self.datatype == '10x':
             self.epochs = 200
             self.weight_factors = [1, 5, 1, 10, 0.05]
         elif self.datatype == 'Spatial-epigenome-transcriptome': 
             self.epochs = 1600
             self.weight_factors = [1, 5, 1, 1, 0.05]
-
+    
     def train(self):
         self.model = Encoder_overall(self.dim_input1, self.dim_output1, self.dim_input2, self.dim_output2).to(self.device)
         self.optimizer = torch.optim.Adam(self.model.parameters(), self.learning_rate, weight_decay=self.weight_decay)
+
+        # 初始化 Focal Loss
+        criterion = FocalLoss(alpha=0.25, gamma=2.0)
 
         self.model.train()
         for epoch in tqdm(range(self.epochs)):
@@ -81,24 +85,27 @@ class Train_SpatialGlue:
             # 计算 Reconstruction Loss
             self.loss_recon_omics1 = F.mse_loss(self.features_omics1, results['emb_recon_omics1'])
             self.loss_recon_omics2 = F.mse_loss(self.features_omics2, results['emb_recon_omics2'])
-            '''
-            *******************************
-            一致性损失弃用
+            
             # 计算 Correspondence Loss
+            '''
             self.loss_corr_omics1 = F.mse_loss(results['z_omics1'], results['mu_omics1'])
             self.loss_corr_omics2 = F.mse_loss(results['z_omics2'], results['mu_omics2'])
-            *******************************
             '''
+            self.loss_corr_omics1 = criterion(results['z_omics1'], results['mu_omics1'])
+            self.loss_corr_omics2 = criterion(results['z_omics2'], results['mu_omics2'])
             # 计算 KL 散度损失（VAE 正则化）
             kl_div_omics1 = -0.5 * torch.sum(1 + results['logvar_omics1'] - results['mu_omics1']**2 - torch.exp(results['logvar_omics1']))
             kl_div_omics2 = -0.5 * torch.sum(1 + results['logvar_omics2'] - results['mu_omics2']**2 - torch.exp(results['logvar_omics2']))
             self.loss_kl = (kl_div_omics1 + kl_div_omics2) / self.n_cell_omics1
 
             # 计算 UDR 认知不确定性
+            weight_rna = 0.7  # 假设 rna 比 protein 更重要
+            weight_protein = 0.3
             self.cog_uncertainty_dict = {
-                'rna': torch.var(results['mu_omics1'], dim=0).mean(),
-                'protein': torch.var(results['mu_omics2'], dim=0).mean()
+                'rna': weight_rna * torch.var(results['mu_omics1'], dim=0).mean(),
+                'protein': weight_protein * torch.var(results['mu_omics2'], dim=0).mean()
             }
+            
 
             # 计算最终损失
             loss = (self.weight_factors[0] * self.loss_recon_omics1 
@@ -119,7 +126,7 @@ class Train_SpatialGlue:
         with torch.no_grad():
             self.model.eval()
             results = self.model(self.features_omics1, self.features_omics2, self.adj_spatial, self.adj_feature_omics1, self.adj_feature_omics2)
- 
+
         emb_omics1 = F.normalize(results['z_omics1'], p=2, eps=1e-12, dim=1)  
         emb_omics2 = F.normalize(results['z_omics2'], p=2, eps=1e-12, dim=1)
         emb_combined = F.normalize(results['emb_latent_combined'], p=2, eps=1e-12, dim=1)
@@ -146,3 +153,15 @@ class Train_SpatialGlue:
                 if 'encoder_omics2' in name:
                     param.grad.mul_(coeff_protein)
         return loss
+    
+class FocalLoss(nn.Module):
+    def __init__(self, alpha=0.25, gamma=2.0):
+        super(FocalLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+
+    def forward(self, inputs, targets):
+        BCE_loss = F.cross_entropy(inputs, targets, reduction='none')
+        pt = torch.exp(-BCE_loss)
+        F_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss
+        return F_loss.mean()
